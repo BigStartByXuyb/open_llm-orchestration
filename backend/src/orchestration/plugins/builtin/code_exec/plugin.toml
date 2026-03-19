@@ -1,0 +1,5 @@
+[plugin]
+name        = "Code Execution"
+class_path  = "orchestration.plugins.builtin.code_exec.CodeExecPlugin"
+version     = "1.0.0"
+description = "Execute Python code in a subprocess sandbox"

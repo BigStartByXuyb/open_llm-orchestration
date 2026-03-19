@@ -1,0 +1,99 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# LLM Orchestration Platform — docker-compose.yml
+#
+# Services:
+#   postgres  — PostgreSQL 15 (persistent volume)
+#   redis     — Redis 7 (persistent volume)
+#   app       — FastAPI backend (built from backend/Dockerfile)
+#
+# Quick start:
+#   cp .env.example .env          # fill in API keys
+#   docker compose up --build -d
+#   docker compose logs -f app
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-llm_orchestration}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Application ────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # ── Database ────────────────────────────────────────────────────────
+      ORCH_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-llm_orchestration}
+
+      # ── Redis ────────────────────────────────────────────────────────────
+      ORCH_REDIS_URL: redis://redis:6379/0
+
+      # ── Auth ─────────────────────────────────────────────────────────────
+      ORCH_JWT_SECRET_KEY: ${ORCH_JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
+
+      # ── Provider API keys (pass-through from host .env) ──────────────────
+      ORCH_ANTHROPIC_API_KEY: ${ORCH_ANTHROPIC_API_KEY:-}
+      ORCH_OPENAI_API_KEY: ${ORCH_OPENAI_API_KEY:-}
+      ORCH_DEEPSEEK_API_KEY: ${ORCH_DEEPSEEK_API_KEY:-}
+      ORCH_GEMINI_API_KEY: ${ORCH_GEMINI_API_KEY:-}
+      ORCH_JIMENG_API_KEY: ${ORCH_JIMENG_API_KEY:-}
+      ORCH_KLING_API_KEY: ${ORCH_KLING_API_KEY:-}
+
+      # ── Coordinator ───────────────────────────────────────────────────────
+      ORCH_COORDINATOR_MODEL: ${ORCH_COORDINATOR_MODEL:-claude-sonnet-4-6}
+
+      # ── Feature flags ────────────────────────────────────────────────────
+      ORCH_ENABLE_REVIEW_GATE: ${ORCH_ENABLE_REVIEW_GATE:-false}
+      ORCH_AUTO_MIGRATE: "true"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/readyz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    volumes:
+      # Optional: mount .env into container for local dev convenience
+      - ./backend/src:/app/src:ro
+
+volumes:
+  postgres_data:
+  redis_data:

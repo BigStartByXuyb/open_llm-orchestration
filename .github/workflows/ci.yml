@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Backend: lint + type-check + unit tests + boundary tests
+  # ─────────────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install dependencies (dev extras)
+        run: pip install -e ".[dev]"
+
+      # ── Lint ──────────────────────────────────────────────────────────────
+      - name: Ruff — lint
+        run: ruff check src/
+
+      - name: Ruff — format check
+        run: ruff format --check src/
+
+      # ── Type check ────────────────────────────────────────────────────────
+      - name: Pyright — type check
+        run: pyright src/
+        continue-on-error: true   # warnings should not block CI; strict mode
+
+      # ── Unit tests (no Docker required) ───────────────────────────────────
+      - name: Pytest — unit tests
+        run: |
+          pytest -m "not integration" \
+            --tb=short -q \
+            --cov=src/orchestration \
+            --cov-report=term-missing \
+            --cov-fail-under=70
+
+      # ── Import boundary tests (repo root, needs backend/src in PYTHONPATH) ─
+      - name: Pytest — import boundary tests
+        run: |
+          cd ..
+          PYTHONPATH=backend/src python -m pytest tests/test_import_boundaries.py \
+            --tb=short -q
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Frontend: type-check + unit tests
+  # ─────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend (TypeScript / Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript — type check
+        run: npx tsc --noEmit
+
+      - name: Vitest — unit tests
+        run: npm run test
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Integration tests (Docker required — runs only on push to main)
+  # 集成测试（需要 Docker — 仅在推送到 main 时运行）
+  # ─────────────────────────────────────────────────────────────────────────
+  integration:
+    name: Integration Tests (Docker)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend]
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install dependencies (dev extras)
+        run: pip install -e ".[dev]"
+
+      - name: Pytest — integration tests (testcontainers)
+        run: |
+          pytest -m integration \
+            --tb=short -q
+        env:
+          TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE: /var/run/docker.sock

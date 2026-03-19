@@ -1,0 +1,5 @@
+[plugin]
+name        = "Web Search"
+class_path  = "orchestration.plugins.builtin.web_search.WebSearchPlugin"
+version     = "1.0.0"
+description = "Web search skill using DuckDuckGo"

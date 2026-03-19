@@ -1,0 +1,5 @@
+[plugin]
+name        = "Browser Automation"
+class_path  = "orchestration.plugins.builtin.browser.plugin.BrowserPlugin"
+version     = "1.0.0"
+description = "Browser automation skill via Playwright"
