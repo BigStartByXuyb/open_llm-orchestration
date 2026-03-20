@@ -162,3 +162,25 @@ MIT License — see [LICENSE](LICENSE) for full text.
 Copyright (c) 2026 BigStartByXuyb
 
 You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of this software. The copyright notice and permission notice must be preserved in all copies or substantial portions.
+
+## Contributing
+
+Contributions are welcome — bug fixes, new LLM providers, or feature extensions.
+
+Before contributing, please read `ARCHITECTURE.md` to understand the 6-layer
+dependency rules. The most common mistake is importing across layers — CI will
+catch this via `tests/test_import_boundaries.py`.
+
+**Good first contributions:**
+- Adding a new LLM provider (only 4 files — see section above)
+- Improving test coverage for existing providers
+- Frontend UI improvements
+
+**Known limitations / areas for improvement:**
+- WebSocket reconnect seq alignment is implemented but not battle-tested
+- MCP client supports stdio/SSE transport only
+- No admin UI for tenant management
+- Billing rollup job needs more granular provider-level tracking
+
+Please open an issue before submitting a large PR so we can discuss the approach
+and make sure it fits the architecture.
