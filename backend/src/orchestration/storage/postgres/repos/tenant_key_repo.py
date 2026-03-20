@@ -18,9 +18,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from orchestration.shared.errors import TenantIsolationError
 from orchestration.storage.postgres.models import TenantKeyRow
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,13 @@ class TenantKeyRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def _inject_tenant(self, tenant_id: Any) -> None:
+        if not tenant_id:
+            raise TenantIsolationError("tenant_id must not be empty")
+        await self._session.execute(
+            text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'")
+        )
 
     # ------------------------------------------------------------------
     # Encryption helpers / 加密辅助方法
@@ -100,6 +108,7 @@ class TenantKeyRepository:
         插入或更新租户 API Key（已存在则更新）。写入前加密。
         Insert or update tenant API key (update if exists). Encrypts before storing.
         """
+        await self._inject_tenant(tenant_id)
         encrypted_key = self._encrypt(api_key)
 
         stmt = select(TenantKeyRow).where(
@@ -131,6 +140,7 @@ class TenantKeyRepository:
         获取指定 provider 的 API Key。读取后解密。
         Get API key for the specified provider. Decrypts after reading.
         """
+        await self._inject_tenant(tenant_id)
         stmt = select(TenantKeyRow).where(
             TenantKeyRow.tenant_id == tenant_id,
             TenantKeyRow.provider_id == provider_id,
@@ -146,6 +156,7 @@ class TenantKeyRepository:
         列出租户所有已配置的 provider API Key（解密后返回）
         List all configured provider API keys for a tenant (decrypted).
         """
+        await self._inject_tenant(tenant_id)
         stmt = select(TenantKeyRow).where(
             TenantKeyRow.tenant_id == tenant_id,
         )
@@ -164,6 +175,7 @@ class TenantKeyRepository:
         删除指定 provider 的 API Key（不存在时返回 False）
         Delete API key for the specified provider (returns False if not found).
         """
+        await self._inject_tenant(tenant_id)
         stmt = delete(TenantKeyRow).where(
             TenantKeyRow.tenant_id == tenant_id,
             TenantKeyRow.provider_id == provider_id,

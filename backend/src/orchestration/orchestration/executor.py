@@ -87,6 +87,7 @@ from orchestration.shared.types import (
     RunContext,
     SubTask,
     TaskPlan,
+    TextPart,
     ToolCallPart,
     ToolResultPart,
 )
@@ -357,6 +358,18 @@ class ParallelExecutor:
         # Work on a mutable copy of context_slice so we can append tool messages
         # 使用 context_slice 的可变副本，以便追加工具消息
         context_slice = list(subtask.context_slice)
+        # Fallback: if no context was explicitly assigned, build a minimal user message
+        # from the subtask description so the provider always receives at least one
+        # non-system message.
+        # 兜底：若未显式分配上下文，则用子任务描述构造最小用户消息，确保 provider 至少收到一条非 system 消息。
+        if not context_slice:
+            desc_text = subtask.description.strip() or "Complete this task."
+            context_slice = [
+                CanonicalMessage(
+                    role=Role.USER,
+                    content=[TextPart(text=desc_text)],
+                )
+            ]
         result: ProviderResult | None = None
 
         for tool_turn in range(self._MAX_TOOL_TURNS + 1):

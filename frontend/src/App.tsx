@@ -32,9 +32,9 @@ function ProtectedLayout() {
 }
 
 export function App() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isAuthenticated = useAuthStore((s) => Boolean(s.token));
 
-  if (!isAuthenticated()) {
+  if (!isAuthenticated) {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />

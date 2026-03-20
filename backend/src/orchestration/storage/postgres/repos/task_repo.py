@@ -30,9 +30,9 @@ class TaskRepository:
     async def _inject_tenant(self, tenant_id: str) -> None:
         if not tenant_id:
             raise TenantIsolationError("tenant_id must not be empty")
+        # SET does not support bind parameters in PostgreSQL; embed the validated UUID directly
         await self._session.execute(
-            text("SET LOCAL app.current_tenant_id = :tid"),
-            {"tid": tenant_id},
+            text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'")
         )
 
     async def create(

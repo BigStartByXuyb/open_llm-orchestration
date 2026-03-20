@@ -297,7 +297,8 @@ async def websocket_endpoint(
             return
         except Exception as exc:
             logger.exception("Unexpected error during orchestration task_id=%s", task_id)
-            await sender.send_error("Internal server error", "internal_error")
+            detail = f"{type(exc).__name__}: {exc}"
+            await sender.send_error(f"Orchestration failed — {detail}", "internal_error")
             await task_state.set_status(task_id, "failed", trace_id=trace_id,
                                         extra={"error": str(exc)})
             await ws.close(code=1011)
@@ -350,7 +351,8 @@ async def websocket_endpoint(
     except Exception as exc:
         logger.exception("Unhandled WebSocket error: task_id=%s error=%s", task_id, exc)
         try:
-            await sender.send_error("Unexpected server error", "internal_error")
+            detail = f"{type(exc).__name__}: {exc}"
+            await sender.send_error(f"Unexpected server error — {detail}", "internal_error")
         except Exception:
             pass
     finally:

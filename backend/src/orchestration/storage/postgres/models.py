@@ -281,6 +281,45 @@ class TenantKeyRow(Base):
 
 
 # ---------------------------------------------------------------------------
+# Templates / 路由模板表
+# ---------------------------------------------------------------------------
+
+
+class TemplateRow(Base):
+    """
+    路由模板表 — 启用 RLS，按 tenant_id 隔离
+    Routing template table — RLS enabled, isolated by tenant_id.
+
+    capabilities: JSONB，存储各能力对应的 provider_id（如 {"text": "anthropic", "image": null}）
+                  JSONB storing per-capability provider_id mappings.
+    """
+
+    __tablename__ = "templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    capabilities: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_templates_tenant_name"),
+        Index("ix_templates_tenant_created", "tenant_id", "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # RLS DDL（在 bootstrap.py 中执行）/ RLS DDL (executed in bootstrap.py)
 # ---------------------------------------------------------------------------
 
@@ -335,6 +374,16 @@ RLS_SETUP_SQL = [
     "DROP POLICY IF EXISTS tenant_isolation ON tenant_api_keys",
     (
         "CREATE POLICY tenant_isolation ON tenant_api_keys "
+        "USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)"
+    ),
+    # templates 表 / templates table
+    "ALTER TABLE templates ENABLE ROW LEVEL SECURITY",
+    "ALTER TABLE templates FORCE ROW LEVEL SECURITY",
+    "DROP POLICY IF EXISTS deny_by_default ON templates",
+    "CREATE POLICY deny_by_default ON templates USING (false)",
+    "DROP POLICY IF EXISTS tenant_isolation ON templates",
+    (
+        "CREATE POLICY tenant_isolation ON templates "
         "USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)"
     ),
 ]

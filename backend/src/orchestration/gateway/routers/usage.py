@@ -12,7 +12,6 @@ Returns per-provider token aggregates for the authenticated tenant.
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Query
@@ -70,9 +69,8 @@ async def get_usage(
         except ValueError:
             since_dt = None
 
-    tenant_id = uuid.UUID(context.tenant_id)
     aggregated: dict[str, int] = await billing_repo.aggregate_by_provider(
-        tenant_id, since=since_dt
+        context.tenant_id, since=since_dt
     )
 
     by_provider = [

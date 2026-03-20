@@ -16,20 +16,12 @@ interface JimengExtras {
   secretKey: string;
 }
 
-export interface RoutingTemplate {
-  id: string;
-  name: string;
-  capabilities: Record<CapKey, string | null>;
-}
-
 interface SettingsState {
   providers: Record<ProviderId, ProviderSettings>;
   jimeng: JimengExtras;
   coordinatorProvider: string;
   coordinatorModelId: string;
   capabilities: Record<CapKey, string | null>;
-  templates: RoutingTemplate[];
-  activeTemplateId: string;
   timezone: string;
   maxTokens: number;
   setProviderKey: (id: ProviderId, key: string) => void;
@@ -38,9 +30,7 @@ interface SettingsState {
   setJimengVolcanoKey: (field: "accessKey" | "secretKey", val: string) => void;
   setCoordinator: (provider: string, modelId: string) => void;
   setCapability: (cap: CapKey, provider: string | null) => void;
-  saveTemplate: (name: string) => void;
-  activateTemplate: (id: string) => void;
-  deleteTemplate: (id: string) => void;
+  setCapabilities: (caps: Record<CapKey, string | null>) => void;
   setTimezone: (tz: string) => void;
   setMaxTokens: (n: number) => void;
 }
@@ -62,12 +52,6 @@ const defaultProviders: Record<ProviderId, ProviderSettings> = {
   kling: { apiKey: "", enabled: true },
 };
 
-const defaultTemplate: RoutingTemplate = {
-  id: "default",
-  name: "智能调配 / Smart Routing",
-  capabilities: { ...defaultCapabilities },
-};
-
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -76,8 +60,6 @@ export const useSettingsStore = create<SettingsState>()(
       coordinatorProvider: "anthropic",
       coordinatorModelId: "claude-sonnet-4-6",
       capabilities: { ...defaultCapabilities },
-      templates: [defaultTemplate],
-      activeTemplateId: "default",
       timezone: "Asia/Shanghai",
       maxTokens: 4096,
 
@@ -109,37 +91,7 @@ export const useSettingsStore = create<SettingsState>()(
       setCapability: (cap, provider) =>
         set((s) => ({ capabilities: { ...s.capabilities, [cap]: provider } })),
 
-      saveTemplate: (name) =>
-        set((s) => {
-          const id = Date.now().toString(36);
-          const newTemplate: RoutingTemplate = {
-            id,
-            name,
-            capabilities: { ...s.capabilities },
-          };
-          return {
-            templates: [...s.templates, newTemplate],
-            activeTemplateId: id,
-          };
-        }),
-
-      activateTemplate: (id) =>
-        set((s) => {
-          const tpl = s.templates.find((t) => t.id === id);
-          if (!tpl) return {};
-          return {
-            activeTemplateId: id,
-            capabilities: { ...tpl.capabilities },
-          };
-        }),
-
-      deleteTemplate: (id) =>
-        set((s) => {
-          if (id === "default") return {};
-          const templates = s.templates.filter((t) => t.id !== id);
-          const activeTemplateId = s.activeTemplateId === id ? "default" : s.activeTemplateId;
-          return { templates, activeTemplateId };
-        }),
+      setCapabilities: (caps) => set({ capabilities: { ...caps } }),
 
       setTimezone: (tz) => set({ timezone: tz }),
 

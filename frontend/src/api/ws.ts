@@ -1,6 +1,6 @@
 import type { WSEvent } from "../types/api";
 
-const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000";
+const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8001";
 
 export type WSEventCallback = (event: WSEvent) => void;
 export type WSCloseCallback = (code: number, reason: string) => void;

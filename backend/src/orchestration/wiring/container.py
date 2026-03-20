@@ -70,10 +70,11 @@ from orchestration.plugins.loader import PluginLoader
 from orchestration.plugins.builtin.code_exec.skill import CodeExecSkill
 from orchestration.plugins.builtin.code_exec.iterative_skill import CodeIterativeSkill
 
-# Layer 4: Storage — billing + vector + tenant keys
+# Layer 4: Storage — billing + vector + tenant keys + templates
 from orchestration.storage.billing.billing_repo import BillingRepository
 from orchestration.storage.vector.vector_store import EmbeddingRepository, RAGRetriever
 from orchestration.storage.postgres.repos.tenant_key_repo import TenantKeyRepository
+from orchestration.storage.postgres.repos.template_repo import TemplateRepository
 
 # Layer 4: MCP
 from orchestration.mcp.client import MCPClient
@@ -378,6 +379,13 @@ class AppContainer:
         Tenant API key repository factory (new instance per request).
         """
         return TenantKeyRepository(session)
+
+    def make_template_repo(self, session: AsyncSession) -> TemplateRepository:
+        """
+        路由模板仓库工厂（每次请求新建实例）
+        Template repository factory (new instance per request).
+        """
+        return TemplateRepository(session)
 
     def build_tenant_adapters(
         self, tenant_key_map: dict[str, str]

@@ -14,7 +14,7 @@ import uuid
 import logging
 
 from orchestration.shared.config import Settings, get_settings
-from orchestration.shared.enums import Capability, Role, TaskStatus
+from orchestration.shared.enums import Capability, ProviderID, Role, TaskStatus
 from orchestration.shared.errors import ProviderError, TransformError
 from orchestration.shared.protocols import (
     DocumentRetrieverProtocol,
@@ -128,6 +128,7 @@ class TaskDecomposer:
         history: list[CanonicalMessage],
         context: RunContext,
         doc_retriever: DocumentRetrieverProtocol | None = None,
+        override_adapters: dict[ProviderID, ProviderAdapter] | None = None,
     ) -> TaskPlan:
         """
         将用户消息分解为任务计划 / Decompose user message into a task plan.
@@ -179,11 +180,17 @@ class TaskDecomposer:
         )
         messages_for_llm = [system_msg] + all_messages
 
+        # Resolve effective adapter: prefer tenant override if available for coordinator provider
+        # 解析有效 adapter：优先使用租户覆盖（如果存在协调者 provider 的覆盖）
+        effective_adapter = (
+            (override_adapters or {}).get(self._adapter.provider_id) or self._adapter
+        )
+
         # Call coordinator LLM (with fallback on ProviderError)
         # 调用协调者 LLM（ProviderError 时自动切换备用 adapter）
         try:
             payload = self._transformer.transform(messages_for_llm)
-            raw_response = await self._adapter.call(payload, context)
+            raw_response = await effective_adapter.call(payload, context)
             result = self._transformer.parse_response(raw_response)
         except ProviderError as primary_exc:
             if self._fallback_adapter is None or self._fallback_transformer is None:
@@ -192,8 +199,12 @@ class TaskDecomposer:
                 "Primary coordinator failed (%s), retrying with fallback adapter",
                 primary_exc,
             )
+            effective_fallback = (
+                (override_adapters or {}).get(self._fallback_adapter.provider_id)
+                or self._fallback_adapter
+            )
             fallback_payload = self._fallback_transformer.transform(messages_for_llm)
-            raw_response = await self._fallback_adapter.call(fallback_payload, context)
+            raw_response = await effective_fallback.call(fallback_payload, context)
             result = self._fallback_transformer.parse_response(raw_response)
 
         return self._parse_task_plan(result.content)
@@ -339,12 +350,6 @@ class TaskDecomposer:
           2. Subtask count does not exceed MAX_SUBTASKS_PER_PLAN.
           3. All depends_on IDs reference subtasks within the same plan.
         """
-        if not plan.subtasks:
-            raise TransformError(
-                "Coordinator returned an empty subtask list",
-                code="empty_plan",
-            )
-
         max_subtasks = self._settings.MAX_SUBTASKS_PER_PLAN
         if len(plan.subtasks) > max_subtasks:
             raise TransformError(

@@ -110,7 +110,9 @@ class OrchestrationEngine:
         """
         # Step 1: Decompose user message into SubTasks (with optional RAG enrichment)
         plan = await self._decomposer.decompose(
-            user_message, history, context, doc_retriever=doc_retriever
+            user_message, history, context,
+            doc_retriever=doc_retriever,
+            override_adapters=override_adapters,
         )
 
         # Step 2: Route each SubTask to the appropriate provider
@@ -149,6 +151,7 @@ class OrchestrationEngine:
             history=history,
             context=context,
             on_summary_chunk=on_summary_chunk,
+            override_adapters=override_adapters,
         )
 
         if event_sink:

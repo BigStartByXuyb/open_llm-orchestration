@@ -7,6 +7,7 @@ import { useStream } from "../hooks/useStream";
 import { useTaskStore } from "../store/taskStore";
 import { useUIStore } from "../store/uiStore";
 import { useT } from "../hooks/useT";
+import { ApiError } from "../api/client";
 
 export function Home() {
   const { sendMessage } = useTask();
@@ -28,7 +29,13 @@ export function Home() {
         const { taskId: tid, sessionId } = await sendMessage(message);
         openStream(tid, message, sessionId);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Failed to send message");
+        if (err instanceof ApiError) {
+          const body = err.body as Record<string, unknown> | null;
+          const detail = body?.detail ?? body?.error ?? err.message;
+          setError(String(detail));
+        } else {
+          setError(err instanceof Error ? err.message : "Failed to send message");
+        }
       }
     },
     [sendMessage, openStream, setError]

@@ -3,7 +3,7 @@
  * Sprint 18/19: connects to GET /tasks/{taskId}/stream.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 export interface TaskStatusEvent {
   event: "status" | "done" | "error";

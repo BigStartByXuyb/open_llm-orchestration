@@ -5,17 +5,25 @@ import { useAuthStore } from "../store/authStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useT } from "../hooks/useT";
 import { registerTenant } from "../api/auth";
-import { syncProviderKey } from "../api/tenant_keys";
 
-/** After login, push any locally-stored API keys to the backend (one-time migration). */
-async function migrateLocalKeys(): Promise<void> {
+/**
+ * After login, push any locally-stored API keys to the backend (one-time migration).
+ * Uses raw fetch (not api.put) to avoid triggering clearToken() on 401 errors,
+ * which would log the user out right after registering.
+ */
+async function migrateLocalKeys(token: string): Promise<void> {
   const providers = useSettingsStore.getState().providers;
   const syncs = Object.entries(providers)
     .filter(([, v]) => v.apiKey.trim())
     .map(([id, v]) =>
-      syncProviderKey(id, v.apiKey).catch((err) =>
-        console.warn(`[login] Failed to migrate ${id} key:`, err)
-      )
+      fetch(`/api/tenant/keys/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ api_key: v.apiKey }),
+      }).catch((err) => console.warn(`[login] Failed to migrate ${id} key:`, err))
     );
   await Promise.allSettled(syncs);
 }
@@ -32,7 +40,7 @@ export function Login() {
     const trimmed = value.trim();
     if (!trimmed) return;
     setToken(trimmed);
-    await migrateLocalKeys();
+    await migrateLocalKeys(trimmed);
     void navigate("/");
   };
 
@@ -42,7 +50,7 @@ export function Login() {
       const res = await registerTenant();
       setNewTenantId(res.tenant_id);
       setToken(res.access_token);
-      await migrateLocalKeys();
+      await migrateLocalKeys(res.access_token);
       void navigate("/");
     } catch (err) {
       console.error("Registration failed:", err);

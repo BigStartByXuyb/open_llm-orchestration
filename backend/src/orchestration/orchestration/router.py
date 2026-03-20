@@ -22,6 +22,13 @@ _DEFAULT_ROUTING_TABLE: dict[Capability, tuple[ProviderID, str]] = {
     Capability.ANALYSIS: (ProviderID.OPENAI, "v1"),
 }
 
+# Default skill_id assigned when a capability routes to ProviderID.SKILL
+# but the subtask has no explicit skill_id set by the decomposer.
+# 当能力路由到 ProviderID.SKILL 但分解器未设置 skill_id 时使用的默认 skill_id。
+_DEFAULT_CAPABILITY_SKILL_ID: dict[Capability, str] = {
+    Capability.SEARCH: "web_search",
+}
+
 
 class CapabilityRouter:
     """
@@ -59,9 +66,18 @@ class CapabilityRouter:
         if subtask.skill_id and subtask.skill_id in self._known_skill_ids:
             provider_id = ProviderID.SKILL
             transformer_version = "v1"
+            skill_id = subtask.skill_id
         else:
             provider_id, transformer_version = self._table.get(
                 subtask.capability, (ProviderID.ANTHROPIC, "v3")
+            )
+            # If routed to SKILL but no explicit skill_id, assign the default
+            # for this capability so the executor can look it up in the registry.
+            # 若路由到 SKILL 但无显式 skill_id，使用能力默认值供 executor 查找。
+            skill_id = subtask.skill_id or (
+                _DEFAULT_CAPABILITY_SKILL_ID.get(subtask.capability, "")
+                if provider_id == ProviderID.SKILL
+                else subtask.skill_id
             )
 
         return SubTask(
@@ -72,7 +88,7 @@ class CapabilityRouter:
             provider_id=provider_id,
             transformer_version=transformer_version,
             depends_on=subtask.depends_on,
-            skill_id=subtask.skill_id,
+            skill_id=skill_id,
             status=subtask.status,
             metadata=subtask.metadata,
         )

@@ -28,7 +28,7 @@ from orchestration.gateway.middleware.auth import AuthMiddleware
 from orchestration.gateway.middleware.rate_limit import RateLimitMiddleware
 from orchestration.gateway.middleware.tenant import TenantMiddleware
 from orchestration.gateway.middleware.tracing import TracingMiddleware
-from orchestration.gateway.routers import tasks, sessions, plugins, ws, webhooks, usage, documents, tenant_keys, auth as auth_router_module
+from orchestration.gateway.routers import tasks, sessions, plugins, ws, webhooks, usage, documents, tenant_keys, auth as auth_router_module, templates as templates_router_module
 from orchestration.gateway.middleware.metrics import MetricsMiddleware, metrics_endpoint
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(usage.router)
     app.include_router(documents.router)
     app.include_router(tenant_keys.router)
+    app.include_router(templates_router_module.router)
 
     # -----------------------------------------------------------------------
     # Prometheus metrics endpoint

@@ -29,6 +29,7 @@ from orchestration.storage.redis.rate_limit_store import RateLimitStore
 from orchestration.storage.billing.billing_repo import BillingRepository
 from orchestration.storage.vector.vector_store import EmbeddingRepository
 from orchestration.storage.postgres.repos.tenant_key_repo import TenantKeyRepository
+from orchestration.storage.postgres.repos.template_repo import TemplateRepository
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +174,21 @@ def get_tenant_key_repo(
 
 
 TenantKeyRepoDep = Annotated[TenantKeyRepository, Depends(get_tenant_key_repo)]
+
+
+# ---------------------------------------------------------------------------
+# Template repository / 路由模板仓库
+# ---------------------------------------------------------------------------
+
+
+def get_template_repo(
+    db: DBSessionDep,
+    container: ContainerDep,
+) -> TemplateRepository:
+    return container.make_template_repo(db)
+
+
+TemplateRepoDep = Annotated[TemplateRepository, Depends(get_template_repo)]
 
 
 # ---------------------------------------------------------------------------

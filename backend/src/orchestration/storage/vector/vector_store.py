@@ -30,6 +30,7 @@ from typing import Any
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from orchestration.shared.errors import TenantIsolationError
 from orchestration.storage.postgres.models import DocumentEmbeddingRow, PGVECTOR_AVAILABLE
 
 
@@ -60,6 +61,13 @@ class EmbeddingRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def _inject_tenant(self, tenant_id: Any) -> None:
+        if not tenant_id:
+            raise TenantIsolationError("tenant_id must not be empty")
+        await self._session.execute(
+            text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'")
+        )
+
     async def upsert_document(
         self,
         tenant_id: Any,
@@ -77,6 +85,7 @@ class EmbeddingRepository:
         embedding: 向量浮点列表（维度由调用方决定，须一致）
                    Float vector list (dimensionality decided by caller, must be consistent).
         """
+        await self._inject_tenant(tenant_id)
         stmt = select(DocumentEmbeddingRow).where(
             DocumentEmbeddingRow.tenant_id == tenant_id,
             DocumentEmbeddingRow.doc_id == doc_id,
@@ -118,6 +127,7 @@ class EmbeddingRepository:
         当 pgvector 可用时使用 HNSW 索引加速（<= 运算符）；否则退回到 Python 全表扫描。
         Uses pgvector HNSW index when available (<=> operator); falls back to Python full scan.
         """
+        await self._inject_tenant(tenant_id)
         if PGVECTOR_AVAILABLE:
             try:
                 return await self._search_pgvector(tenant_id, query_embedding, top_k, min_score)
@@ -208,6 +218,7 @@ class EmbeddingRepository:
         删除文档（不存在时返回 False）
         Delete a document (returns False if not found).
         """
+        await self._inject_tenant(tenant_id)
         stmt = delete(DocumentEmbeddingRow).where(
             DocumentEmbeddingRow.tenant_id == tenant_id,
             DocumentEmbeddingRow.doc_id == doc_id,
@@ -224,6 +235,7 @@ class EmbeddingRepository:
         按 doc_id 获取单个文档（含向量）
         Get a single document by doc_id (including embedding).
         """
+        await self._inject_tenant(tenant_id)
         stmt = select(DocumentEmbeddingRow).where(
             DocumentEmbeddingRow.tenant_id == tenant_id,
             DocumentEmbeddingRow.doc_id == doc_id,
@@ -236,6 +248,7 @@ class EmbeddingRepository:
         返回租户的文档总数
         Return total document count for a tenant.
         """
+        await self._inject_tenant(tenant_id)
         stmt = select(DocumentEmbeddingRow).where(
             DocumentEmbeddingRow.tenant_id == tenant_id,
         )
@@ -258,6 +271,7 @@ class EmbeddingRepository:
         """
         if not query or not query.strip():
             return []
+        await self._inject_tenant(tenant_id)
         stmt = (
             select(DocumentEmbeddingRow)
             .where(

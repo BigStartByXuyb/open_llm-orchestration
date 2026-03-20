@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useT } from "../hooks/useT";
 import { useUIStore } from "../store/uiStore";
 import {
@@ -6,6 +6,8 @@ import {
   type ProviderId,
   type CapKey,
 } from "../store/settingsStore";
+import { useTemplateStore } from "../store/templateStore";
+import { syncProviderKey } from "../api/tenant_keys";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -49,7 +51,21 @@ function ApiKeyRow({ id }: { id: ProviderId }) {
   const { providers, jimeng, setProviderKey, setProviderEnabled, setJimengAuthMode, setJimengVolcanoKey } =
     useSettingsStore();
   const [visible, setVisible] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const provider = providers[id];
+
+  async function handleSave() {
+    if (!provider.apiKey.trim()) return;
+    setSyncStatus("saving");
+    try {
+      await syncProviderKey(id, provider.apiKey);
+      setSyncStatus("saved");
+      setTimeout(() => setSyncStatus("idle"), 2000);
+    } catch {
+      setSyncStatus("error");
+      setTimeout(() => setSyncStatus("idle"), 2000);
+    }
+  }
 
   return (
     <div className="mb-4">
@@ -73,6 +89,20 @@ function ApiKeyRow({ id }: { id: ProviderId }) {
             {visible ? "🙈" : "👁"}
           </button>
         </div>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!provider.apiKey.trim() || syncStatus === "saving"}
+          className={`px-2.5 py-1.5 rounded-[6px] text-xs font-medium transition-colors shrink-0 ${
+            syncStatus === "saved"
+              ? "bg-green-500/20 text-green-400"
+              : syncStatus === "error"
+              ? "bg-red-500/20 text-red-400"
+              : "bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+          }`}
+        >
+          {syncStatus === "saving" ? "..." : syncStatus === "saved" ? "Saved" : syncStatus === "error" ? "Error" : "Save"}
+        </button>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-xs text-text-muted">{t("settings.enabled")}</span>
           <Toggle checked={provider.enabled} onChange={(v) => setProviderEnabled(id, v)} />
@@ -134,26 +164,44 @@ export function Settings() {
     coordinatorProvider,
     coordinatorModelId,
     capabilities,
-    templates,
-    activeTemplateId,
     timezone,
     maxTokens,
     setCoordinator,
     setCapability,
-    saveTemplate,
-    activateTemplate,
-    deleteTemplate,
     setTimezone,
     setMaxTokens,
   } = useSettingsStore();
+  const {
+    templates,
+    activeTemplateId,
+    loading: tplLoading,
+    fetch: fetchTemplates,
+    save: saveTemplate,
+    remove: removeTemplate,
+    activate: activateTemplate,
+  } = useTemplateStore();
+
+  useEffect(() => {
+    fetchTemplates();
+  }, []);
 
   const [newTemplateName, setNewTemplateName] = useState("");
+  const [tplSaving, setTplSaving] = useState(false);
+  const [tplError, setTplError] = useState<string | null>(null);
 
-  const handleSaveTemplate = () => {
+  const handleSaveTemplate = async () => {
     const name = newTemplateName.trim();
     if (!name) return;
-    saveTemplate(name);
-    setNewTemplateName("");
+    setTplSaving(true);
+    setTplError(null);
+    try {
+      await saveTemplate(name, capabilities);
+      setNewTemplateName("");
+    } catch {
+      setTplError("保存失败 / Save failed");
+    } finally {
+      setTplSaving(false);
+    }
   };
 
   return (
@@ -236,54 +284,62 @@ export function Settings() {
           />
           <button
             onClick={handleSaveTemplate}
-            className="px-3 py-1.5 rounded-[6px] bg-primary text-white text-sm hover:bg-primary/90 transition-colors"
+            disabled={!newTemplateName.trim() || tplSaving}
+            className="px-3 py-1.5 rounded-[6px] bg-primary text-white text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {t("settings.save_template")}
+            {tplSaving ? "..." : t("settings.save_template")}
           </button>
         </div>
-        <div className="space-y-2">
-          {templates.map((tpl) => {
-            const isActive = tpl.id === activeTemplateId;
-            const isDefault = tpl.id === "default";
-            return (
-              <div
-                key={tpl.id}
-                className={`flex items-center gap-2 rounded-[6px] px-3 py-2 ${
-                  isActive ? "bg-primary/10" : "bg-bg-base"
-                }`}
-              >
-                <span
-                  className={`text-sm flex-1 ${
-                    isActive ? "text-primary font-medium" : "text-text-secondary"
+        {tplError && (
+          <p className="text-xs text-red-400 mb-2">{tplError}</p>
+        )}
+        {tplLoading && templates.length <= 1 ? (
+          <p className="text-xs text-text-muted">Loading...</p>
+        ) : (
+          <div className="space-y-2">
+            {templates.map((tpl) => {
+              const isActive = tpl.id === activeTemplateId;
+              const isDefault = tpl.id === "default";
+              return (
+                <div
+                  key={tpl.id}
+                  className={`flex items-center gap-2 rounded-[6px] px-3 py-2 ${
+                    isActive ? "bg-primary/10" : "bg-bg-base"
                   }`}
                 >
-                  {tpl.name}
-                  {isDefault && (
-                    <span className="ml-1.5 text-xs text-text-muted">(内置)</span>
+                  <span
+                    className={`text-sm flex-1 ${
+                      isActive ? "text-primary font-medium" : "text-text-secondary"
+                    }`}
+                  >
+                    {tpl.name}
+                    {isDefault && (
+                      <span className="ml-1.5 text-xs text-text-muted">(内置)</span>
+                    )}
+                  </span>
+                  {isActive ? (
+                    <span className="text-xs text-primary">{t("settings.active")}</span>
+                  ) : (
+                    <button
+                      onClick={() => activateTemplate(tpl.id)}
+                      className="text-xs text-text-secondary hover:text-primary transition-colors"
+                    >
+                      {t("settings.activate")}
+                    </button>
                   )}
-                </span>
-                {isActive ? (
-                  <span className="text-xs text-primary">{t("settings.active")}</span>
-                ) : (
-                  <button
-                    onClick={() => activateTemplate(tpl.id)}
-                    className="text-xs text-text-secondary hover:text-primary transition-colors"
-                  >
-                    {t("settings.activate")}
-                  </button>
-                )}
-                {!isDefault && (
-                  <button
-                    onClick={() => deleteTemplate(tpl.id)}
-                    className="text-xs text-text-muted hover:text-red-400 transition-colors"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {!isDefault && (
+                    <button
+                      onClick={() => removeTemplate(tpl.id)}
+                      className="text-xs text-text-muted hover:text-red-400 transition-colors"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </SectionCard>
 
       {/* §5 General */}

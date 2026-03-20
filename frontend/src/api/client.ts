@@ -29,6 +29,9 @@ async function request<T>(
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      useAuthStore.getState().clearToken();
+    }
     let body: unknown;
     try {
       body = await res.json();
@@ -55,6 +58,9 @@ async function requestForm<T>(path: string, form: FormData): Promise<T> {
     body: form,
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      useAuthStore.getState().clearToken();
+    }
     let body: unknown;
     try {
       body = await res.json();

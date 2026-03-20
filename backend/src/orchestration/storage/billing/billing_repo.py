@@ -19,9 +19,10 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from orchestration.shared.errors import TenantIsolationError
 from orchestration.storage.postgres.models import UsageRow
 
 
@@ -33,6 +34,13 @@ class BillingRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def _inject_tenant(self, tenant_id: Any) -> None:
+        if not tenant_id:
+            raise TenantIsolationError("tenant_id must not be empty")
+        await self._session.execute(
+            text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'")
+        )
 
     async def record_usage(
         self,
@@ -49,6 +57,7 @@ class BillingRepository:
         通常在 block_done 事件时调用，每个子任务完成后记录一次。
         Typically called on block_done event, once per completed subtask.
         """
+        await self._inject_tenant(tenant_id)
         row = UsageRow(
             tenant_id=tenant_id,
             task_id=task_id,
@@ -70,6 +79,7 @@ class BillingRepository:
         查询租户用量记录（可按时间范围过滤）
         Query usage records for a tenant (optionally filtered by time range).
         """
+        await self._inject_tenant(tenant_id)
         stmt = (
             select(UsageRow)
             .where(UsageRow.tenant_id == tenant_id)
@@ -83,7 +93,7 @@ class BillingRepository:
 
     async def aggregate_by_provider(
         self,
-        tenant_id: uuid.UUID,
+        tenant_id: uuid.UUID | str,
         since: datetime | None = None,
     ) -> dict[str, int]:
         """
@@ -93,6 +103,7 @@ class BillingRepository:
         用于前端 /usage 页面显示各 provider 的用量分布。
         Used for frontend /usage page to display provider usage breakdown.
         """
+        await self._inject_tenant(tenant_id)
         stmt = (
             select(UsageRow.provider_id, func.sum(UsageRow.tokens_used).label("total"))
             .where(UsageRow.tenant_id == tenant_id)
@@ -112,6 +123,7 @@ class BillingRepository:
         查询指定任务的总 token 用量
         Get total token usage for a specific task.
         """
+        await self._inject_tenant(tenant_id)
         stmt = (
             select(func.sum(UsageRow.tokens_used))
             .where(UsageRow.tenant_id == tenant_id)

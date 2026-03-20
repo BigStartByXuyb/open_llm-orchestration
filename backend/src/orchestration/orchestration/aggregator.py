@@ -19,7 +19,7 @@ from orchestration.shared.types import (
     RunContext,
     TextPart,
 )
-from orchestration.shared.enums import Role
+from orchestration.shared.enums import ProviderID, Role
 
 
 class ResultAggregator:
@@ -52,6 +52,7 @@ class ResultAggregator:
         history: list[CanonicalMessage],
         context: RunContext,
         on_summary_chunk: Callable[[str], Awaitable[None]] | None = None,
+        override_adapters: dict[ProviderID, ProviderAdapter] | None = None,
     ) -> str:
         """
         聚合所有子任务结果并生成最终汇总
@@ -65,10 +66,16 @@ class ResultAggregator:
             compressed, original_request, history
         )
 
+        # Prefer tenant override adapter for coordinator provider
+        # 优先使用租户覆盖的协调者 adapter
+        effective_adapter = (
+            (override_adapters or {}).get(self._adapter.provider_id) or self._adapter
+        )
+
         payload = self._transformer.transform(summary_messages)
         full_text = ""
 
-        async for chunk in self._adapter.stream(payload, context):
+        async for chunk in effective_adapter.stream(payload, context):
             full_text += chunk.delta
             if on_summary_chunk and chunk.delta:
                 await on_summary_chunk(chunk.delta)

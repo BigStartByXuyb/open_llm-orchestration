@@ -16,12 +16,12 @@ export function useTask() {
   const reset = useTaskStore((s) => s.reset);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const setSessionId = useSessionStore((s) => s.setSessionId);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const token = useAuthStore((s) => s.token);
 
   async function sendMessage(
     message: string
   ): Promise<{ taskId: string; sessionId: string }> {
-    if (!isAuthenticated()) {
+    if (!token) {
       throw new Error("Not authenticated");
     }
 

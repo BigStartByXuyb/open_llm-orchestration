@@ -14,6 +14,7 @@ Layer 5: May import from all layers.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -69,9 +70,24 @@ async def bootstrap(settings: Settings | None = None) -> AppContainer:
     # 可选：在非生产环境中自动建表
     if os.getenv("ORCH_AUTO_MIGRATE", "").lower() in ("1", "true", "yes"):
         from orchestration.storage.postgres.engine import create_tables, apply_rls_policies
-        engine = container._db_engine  # noqa: SLF001 (intentional access)
+        engine = container._infra.db_engine  # noqa: SLF001 (intentional access)
         if engine is not None:
-            await create_tables(engine)
+            # Retry loop: Docker DNS may not resolve 'postgres' immediately after network creation
+            # 重试循环：Docker DNS 在网络创建后可能无法立即解析 'postgres'
+            for attempt in range(1, 6):
+                try:
+                    await create_tables(engine)
+                    break
+                except Exception as exc:
+                    if attempt < 5:
+                        logger.warning(
+                            "create_tables attempt %d/5 failed: %s — retrying in 3s",
+                            attempt, exc,
+                        )
+                        await asyncio.sleep(3)
+                    else:
+                        logger.error("create_tables failed after 5 attempts: %s", exc)
+                        raise
             try:
                 await apply_rls_policies(engine)
             except Exception as exc:
