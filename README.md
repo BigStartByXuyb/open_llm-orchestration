@@ -1,3 +1,5 @@
+English isn't my first language, so I used Claude to help polish this post. The architecture and implementation are my own — AI assisted with some of the boilerplate code within the framework I designed.
+
 # LLM Orchestration Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
