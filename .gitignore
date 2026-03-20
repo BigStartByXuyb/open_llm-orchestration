@@ -38,3 +38,8 @@ Thumbs.db
 # Docker volumes
 postgres_data/
 redis_data/
+
+# Claude Code (do not commit)
+.claude/
+.claudeignore
+CLAUDE.md
