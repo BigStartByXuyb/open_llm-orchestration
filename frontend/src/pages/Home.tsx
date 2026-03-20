@@ -17,16 +17,21 @@ export function Home() {
   const userMessage = useTaskStore((s) => s.userMessage);
   const { lang, setLang } = useUIStore();
   const t = useT();
+  const setError = useTaskStore((s) => s.setError);
 
   // Cleanup WS on unmount
   useEffect(() => () => closeStream(), [closeStream]);
 
   const handleSubmit = useCallback(
     async (message: string) => {
-      const { taskId: tid, sessionId } = await sendMessage(message);
-      openStream(tid, message, sessionId);
+      try {
+        const { taskId: tid, sessionId } = await sendMessage(message);
+        openStream(tid, message, sessionId);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Failed to send message");
+      }
     },
-    [sendMessage, openStream]
+    [sendMessage, openStream, setError]
   );
 
   const isRunning = phase === "pending" || phase === "running" || phase === "summary";

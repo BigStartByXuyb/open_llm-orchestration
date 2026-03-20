@@ -1,22 +1,9 @@
 """
-文档摄入路由 — POST /documents, GET /documents, DELETE /documents/{doc_id}
-Document ingestion router — POST /documents, GET /documents, DELETE /documents/{doc_id}.
+文档摄入路由 — POST /documents, GET /documents, GET /documents/{doc_id}, DELETE /documents/{doc_id}
+Document ingestion router.
 
 Layer 1: Uses deps for all external access.
 第 1 层：通过 deps 访问所有外部资源。
-
-用途 / Purpose:
-  允许外部系统将文本文档（含调用方预计算的向量嵌入）摄入平台的向量存储，
-  供 RAG 检索流程使用。
-  Allow external systems to ingest text documents (with caller-precomputed embeddings)
-  into the platform's vector store for RAG retrieval workflows.
-
-向量嵌入由调用方提供 / Embeddings are provided by the caller:
-  平台不内置 embedding 模型 — 调用方使用任意 embedding API（OpenAI、Anthropic 等）
-  将文本转为向量，再提交本接口存储。维度须在同一租户内保持一致。
-  The platform has no built-in embedding model. Callers use any embedding API
-  (OpenAI, Anthropic, etc.) to convert text to vectors before submitting.
-  Dimensions must be consistent within a tenant.
 """
 
 from __future__ import annotations
@@ -25,8 +12,8 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from orchestration.gateway.deps import (
     EmbeddingRepoDep,
@@ -38,41 +25,29 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 # ---------------------------------------------------------------------------
-# Request / Response schemas / 请求/响应模型
+# Response schemas
 # ---------------------------------------------------------------------------
 
 
-class DocumentIngestRequest(BaseModel):
-    doc_id: str | None = Field(
-        default=None,
-        description="文档唯一标识符（省略时自动生成）/ Unique document ID (auto-generated if omitted)",
-    )
-    content: str = Field(description="文档文本内容 / Document text content")
-    embedding: list[float] = Field(
-        description="调用方预计算的浮点向量 / Caller-precomputed float vector"
-    )
-    metadata: dict = Field(
-        default_factory=dict,
-        description="任意元数据（来源、标签等）/ Arbitrary metadata (source, tags, etc.)",
-    )
-
-
-class DocumentIngestResponse(BaseModel):
-    doc_id: str
-    tenant_id: str
-    content_length: int
-
-
 class DocumentInfo(BaseModel):
-    doc_id: str
-    content_preview: str   # first 200 chars
-    embedding_dim: int
-    metadata: dict
+    document_id: str
+    title: str
+    content_type: str
+    chunk_count: int
+    char_count: int
+    created_at: str | None
 
 
 class DocumentListResponse(BaseModel):
     documents: list[DocumentInfo]
     total: int
+
+
+class DocumentUploadResponse(BaseModel):
+    document_id: str
+    title: str
+    chunk_count: int
+    message: str
 
 
 class DocumentDeleteResponse(BaseModel):
@@ -81,53 +56,53 @@ class DocumentDeleteResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Endpoints / 端点
+# Endpoints
 # ---------------------------------------------------------------------------
 
 
 @router.post(
     "",
-    response_model=DocumentIngestResponse,
+    response_model=DocumentUploadResponse,
     status_code=201,
-    responses={400: {"description": "Invalid request body"}},
 )
-async def ingest_document(
-    body: DocumentIngestRequest,
+async def upload_document(
     context: RunContextDep,
     embedding_repo: EmbeddingRepoDep,
-) -> DocumentIngestResponse:
+    file: UploadFile,
+    title: str = Form(...),
+) -> DocumentUploadResponse:
     """
-    摄入单个文档（含预计算向量嵌入）
-    Ingest a single document with a pre-computed vector embedding.
-
-    doc_id: 省略时自动生成 UUID / Auto-generates a UUID if omitted.
-    content: 文档原文，存储后可随搜索结果一起返回 / Raw document text, returned with search results.
-    embedding: 浮点向量列表，维度须与该租户已有文档一致 /
-               Float vector; dimensionality must be consistent with existing tenant documents.
+    上传文档文件（.txt 等），自动存入向量库
+    Upload a document file and store it in the vector store.
     """
-    if not body.content.strip():
-        raise HTTPException(status_code=400, detail="content must not be empty")
-    if not body.embedding:
-        raise HTTPException(status_code=400, detail="embedding must not be empty")
+    raw = await file.read()
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        content = raw.decode("latin-1")
 
-    doc_id = body.doc_id or str(uuid.uuid4())
-    row = await embedding_repo.upsert_document(
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="File content must not be empty")
+
+    doc_id = str(uuid.uuid4())
+    content_type = file.content_type or "text/plain"
+    char_count = len(content)
+
+    await embedding_repo.upsert_document(
         tenant_id=context.tenant_id,
         doc_id=doc_id,
-        content=body.content,
-        embedding=body.embedding,
-        metadata=body.metadata,
+        content=content,
+        embedding=[0.0],
+        metadata={"title": title, "content_type": content_type, "char_count": char_count},
     )
 
-    logger.info(
-        "Document ingested: doc_id=%s tenant_id=%s dim=%d",
-        doc_id, context.tenant_id, len(body.embedding),
-    )
+    logger.info("Document uploaded: doc_id=%s title=%s tenant_id=%s", doc_id, title, context.tenant_id)
 
-    return DocumentIngestResponse(
-        doc_id=doc_id,
-        tenant_id=context.tenant_id,
-        content_length=len(body.content),
+    return DocumentUploadResponse(
+        document_id=doc_id,
+        title=title,
+        chunk_count=1,
+        message="Document uploaded successfully",
     )
 
 
@@ -140,39 +115,64 @@ async def list_documents(
     embedding_repo: EmbeddingRepoDep,
 ) -> DocumentListResponse:
     """
-    列出当前租户的所有文档（含内容预览和向量维度）
-    List all documents for the current tenant (with content preview and embedding dimension).
+    列出当前租户的所有文档
+    List all documents for the current tenant.
     """
     tenant_id = context.tenant_id
-    # Reuse the search method with a dummy vector to list all docs
-    # (top_k large enough to retrieve all for small datasets)
-    # For a proper implementation, a dedicated list() method would be more efficient.
-    # Use count() + raw select would be ideal; for now reuse existing repo methods.
     count = await embedding_repo.count(tenant_id)
     if count == 0:
         return DocumentListResponse(documents=[], total=0)
 
-    # Use a zero-vector search to retrieve all docs (min_score=-2.0 passes all)
-    # This is acceptable for the list endpoint on small-medium datasets.
-    dummy_vector = [0.0]
     results = await embedding_repo.search(
         tenant_id=tenant_id,
-        query_embedding=dummy_vector,
+        query_embedding=[0.0],
         top_k=count,
         min_score=-2.0,
     )
 
-    docs = [
-        DocumentInfo(
-            doc_id=row.doc_id,
-            content_preview=row.content[:200],
-            embedding_dim=len(row.embedding) if row.embedding else 0,
-            metadata=row.doc_metadata or {},
-        )
-        for row, _ in results
-    ]
+    docs = []
+    for row, _ in results:
+        meta: dict[str, Any] = row.doc_metadata or {}
+        created = row.created_at.isoformat() if row.created_at else None
+        docs.append(DocumentInfo(
+            document_id=row.doc_id,
+            title=meta.get("title", row.doc_id),
+            content_type=meta.get("content_type", "text/plain"),
+            chunk_count=1,
+            char_count=meta.get("char_count", len(row.content or "")),
+            created_at=created,
+        ))
 
     return DocumentListResponse(documents=docs, total=len(docs))
+
+
+@router.get(
+    "/{doc_id}",
+    response_model=DocumentInfo,
+)
+async def get_document(
+    doc_id: str,
+    context: RunContextDep,
+    embedding_repo: EmbeddingRepoDep,
+) -> DocumentInfo:
+    """
+    获取单个文档详情
+    Get a single document by ID.
+    """
+    row = await embedding_repo.get_document(context.tenant_id, doc_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    meta: dict[str, Any] = row.doc_metadata or {}
+    created = row.created_at.isoformat() if row.created_at else None
+    return DocumentInfo(
+        document_id=row.doc_id,
+        title=meta.get("title", row.doc_id),
+        content_type=meta.get("content_type", "text/plain"),
+        chunk_count=1,
+        char_count=meta.get("char_count", len(row.content or "")),
+        created_at=created,
+    )
 
 
 @router.delete(
@@ -190,9 +190,6 @@ async def delete_document(
     """
     deleted = await embedding_repo.delete_document(context.tenant_id, doc_id)
 
-    logger.info(
-        "Document delete: doc_id=%s tenant_id=%s deleted=%s",
-        doc_id, context.tenant_id, deleted,
-    )
+    logger.info("Document delete: doc_id=%s tenant_id=%s deleted=%s", doc_id, context.tenant_id, deleted)
 
     return DocumentDeleteResponse(doc_id=doc_id, deleted=deleted)
