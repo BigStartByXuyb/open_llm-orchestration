@@ -151,7 +151,7 @@ No other files need modification. The layered architecture guarantees zero cross
 
 If you use this framework as a base for your own product or project, please include a visible credit link back to this repository. A line in your README or About page is sufficient:
 
-> Built on [LLM Orchestration Platform](https://github.com/BigStartByXuyb/llm-orchestration) by BigStartByXuyb.
+> Built on [LLM Orchestration Platform](https://github.com/BigStartByXuyb/open_llm-orchestration) by BigStartByXuyb.
 
 ---
 
@@ -162,6 +162,38 @@ MIT License — see [LICENSE](LICENSE) for full text.
 Copyright (c) 2026 BigStartByXuyb
 
 You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of this software. The copyright notice and permission notice must be preserved in all copies or substantial portions.
+
+## Roadmap
+
+The following features are planned but not yet implemented. Contributions are especially welcome in these areas.
+
+### Subtask Topology Graph
+
+A real-time DAG visualization showing how the orchestration engine decomposes a request into parallel subtasks, which provider handles each node, and the execution order and dependencies between them.
+
+- Frontend: interactive graph (D3.js or React Flow) rendered from the task plan emitted by `TaskDecomposer`
+- Backend: expose `GET /tasks/{id}/topology` returning the full `TaskPlan` graph structure
+- Live updates via existing WebSocket events (`block_created`, `block_done`)
+
+### Real-time Task Tracking
+
+End-to-end trace view for each request, connected to the existing `trace_id` field carried by `RunContext` and every `BlockUpdate` event.
+
+- Per-task timeline: latency breakdown by subtask, provider, and transformer phase
+- Integration with the existing OpenTelemetry `trace_id` infrastructure (Sprint 9)
+- Frontend trace viewer: swimlane view by provider with token counts and latency bars
+
+### Subtask Detail Panel
+
+Clicking any subtask block opens a detail view showing:
+
+- Full input sent to the provider (post-transformer canonical format)
+- Raw provider response
+- Token usage breakdown (`prompt_tokens`, `completion_tokens`)
+- Latency per phase (transform → HTTP → parse)
+- Transformer version used and any tool calls / tool results in the round-trip
+
+---
 
 ## Contributing
 
